@@ -16,11 +16,14 @@ Notes:
 #%% IMPORTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 if __name__ == "__main__":
     import os
+    # os.chdir(r"C:\Users\melof\OneDrive\Documents\GitHub\cmpsML_SpaceSomethingorOther\CODE")
     os.chdir(r"C:\Users\brook\OneDrive\Documents\GitHub\cmpsML_SpaceSomethingorOther\CODE")
+    
 
 #custom imports
 #other imports
 from copy import deepcopy as dpcpy
+#import mne
 
 from matplotlib import pyplot as plt
 import scipy.signal as signal
@@ -39,7 +42,7 @@ with open(f'{pathSoi}{soi_file}', 'rb') as fp:
        soi = pckl.load(fp)
 
 #Reading desired channel labels
-ch1Labl, ch2Labl, ch3Labl = input("Enter 3 channel labels (ex: P7 P3 Pz):").split()
+ch1Labl, ch2Labl, ch3Labl = input("Enter 3 channel labels (ex: P7 P3 Pz):").upper().split()
 #
 #%% CONSTANTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #%% CONFIGURATION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -91,47 +94,69 @@ def plotData(ch1, ch2, ch3):
 def applyFilters(ch1, ch2, ch3, sampleFreq):
     #Apply notch filter
     notch_freq = [60, 120, 180, 240]
+    ch1Stream_notched = ch1['stream']
+    ch2Stream_notched = ch2['stream']
+    ch3Stream_notched = ch3['stream']
+    
     for freq in notch_freq:
         b_notch, a_notch = signal.iirnotch(w0=freq, Q=50, fs=sampleFreq)
-        ch1Stream_notched = signal.filtfilt(b_notch, a_notch, ch1['stream'])
-        ch2Stream_notched = signal.filtfilt(b_notch, a_notch, ch2['stream'])
-        ch3Stream_notched = signal.filtfilt(b_notch, a_notch, ch3['stream'])
+        ch1Stream_notched = signal.filtfilt(b_notch, a_notch, ch1Stream_notched)
+        ch2Stream_notched = signal.filtfilt(b_notch, a_notch, ch2Stream_notched)
+        ch3Stream_notched = signal.filtfilt(b_notch, a_notch, ch3Stream_notched)
+    notchedData = [ch1Stream_notched, ch2Stream_notched, ch3Stream_notched]
     
     #Apply impedance filter
     impedance = [124, 126]
     b_imp, a_imp = signal.butter(N=4, Wn=[impedance[0] / (sampleFreq/2), impedance[1] / (sampleFreq / 2)], btype='bandstop')
-    ch1Stream_impeded = signal.filtfilt(b_imp, a_imp, ch1Stream_notched)
-    ch2Stream_impeded = signal.filtfilt(b_imp, a_imp, ch2Stream_notched)
-    ch3Stream_impeded = signal.filtfilt(b_imp, a_imp, ch3Stream_notched)
+    ch1Stream_impeded = signal.filtfilt(b_imp, a_imp, ch1['stream'])
+    ch2Stream_impeded = signal.filtfilt(b_imp, a_imp, ch2['stream'])
+    ch3Stream_impeded = signal.filtfilt(b_imp, a_imp, ch3['stream'])
+    impedanceData = [ch1Stream_impeded, ch2Stream_impeded, ch3Stream_impeded]
     
     #Apply bandpass filter
     bandpass = [0.5, 32]
     b_bandpass, a_bandpass = signal.butter(N=4, Wn=[bandpass[0] / (sampleFreq/2), bandpass[1] / (sampleFreq/2)], btype='bandpass')
-    ch1Stream_bandpass = signal.filtfilt(b_bandpass, a_bandpass, ch1Stream_impeded)
-    ch2Stream_bandpass = signal.filtfilt(b_bandpass, a_bandpass, ch2Stream_impeded)
-    ch3Stream_bandpass = signal.filtfilt(b_bandpass, a_bandpass, ch3Stream_impeded)
-    filteredData = [ch1Stream_bandpass, ch2Stream_bandpass, ch3Stream_bandpass]
+    ch1Stream_bandpass = signal.filtfilt(b_bandpass, a_bandpass, ch1['stream'])
+    ch2Stream_bandpass = signal.filtfilt(b_bandpass, a_bandpass, ch2['stream'])
+    ch3Stream_bandpass = signal.filtfilt(b_bandpass, a_bandpass, ch3['stream'])
+    bandpassData = [ch1Stream_bandpass, ch2Stream_bandpass, ch3Stream_bandpass]
 
-    return filteredData
+    return notchedData, impedanceData, bandpassData
 
-def plotFilteredData(ch1, ch2, ch3, filteredData):
+def plotFilteredData(ch1, ch2, ch3, notchedData, impedanceData, bandpassData):
     plt.figure(figsize=(14, 10))
     chIndex = 0
     pltIndex = 0
     for channel in [ch1, ch2, ch3]:
         #Plotting original data
         pltIndex += 1
-        plt.subplot(3, 2, pltIndex)
+        plt.subplot(3, 4, pltIndex)
         plt.plot(channel['tStamp'], channel['stream'])
         plt.title(channel['label'][0] + ' Original')
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
 
-        #Plotting filtered data
+        #Plotting notched data
         pltIndex += 1
-        plt.subplot(3, 2, pltIndex)
-        plt.plot(channel['tStamp'], filteredData[chIndex])
-        plt.title(channel['label'][0] + ' Filtered')
+        plt.subplot(3, 4, pltIndex)
+        plt.plot(channel['tStamp'], notchedData[chIndex])
+        plt.title(channel['label'][0] + ' with Notch Filter')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Amplitude')
+        
+        #Plotting impedance data
+        pltIndex += 1
+        plt.subplot(3, 4, pltIndex)
+        plt.plot(channel['tStamp'], impedanceData[chIndex])
+        plt.title(channel['label'][0] + ' with Impedance Filter')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Amplitude')
+        
+        #Plotting bandpass data
+        pltIndex += 1
+        plt.subplot(3, 4, pltIndex)
+        plt.plot(channel['tStamp'], bandpassData[chIndex])
+        plt.title(channel['label'][0] + ' with Bandpass Filter')
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
         chIndex += 1
@@ -146,11 +171,15 @@ def main():
     ch1, ch2, ch3, sampleFreq = getData(ch1Indx, ch2Indx, ch3Indx)
     plotData(ch1, ch2, ch3)
 
-    filteredData = applyFilters(ch1, ch2, ch3, sampleFreq)
+    notchedData, impedanceData, bandpassData = applyFilters(ch1, ch2, ch3, sampleFreq)
     #Rereferencing filtered data
-    for channel in filteredData:
+    for channel in notchedData:
         channel -= np.mean(channel)
-    plotFilteredData(ch1, ch2, ch3, filteredData)
+    for channel in impedanceData:
+        channel -= np.mean(channel)
+    for channel in bandpassData:
+        channel -= np.mean(channel)
+    plotFilteredData(ch1, ch2, ch3, notchedData, impedanceData, bandpassData)
 #
 #%% SELF-RUN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Main Self-run block
