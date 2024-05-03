@@ -1,5 +1,5 @@
 #%% MODULE BEGINS
-module_name = 'PA4'
+module_name = 'Final_Project'
 '''
 Version: <***>
 Description:
@@ -25,18 +25,18 @@ from copy import deepcopy as dpcpy
 from matplotlib import pyplot as plt
 import scipy.signal as signal
 import numpy as np
-#import mne
 import csv
 import pandas as pd
 import seaborn as sns
 import pickle as pckl
 from scipy.stats import kurtosis, skew
 from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier 
 from sklearn.neural_network import MLPClassifier
-from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import confusion_matrix, roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
 #
 #%% USER INTERFACE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#chLabel = input("Enter a channel label(ex, M1):").upper()
+chLabel = input("Enter a channel label(ex, M1):").upper()
 #
 #%% CONSTANTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #%% CONFIGURATION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -57,7 +57,7 @@ def getIndex(chLabel):
     for i in range(len(soi['info']['eeg_info']['channels'])):
         if soi['info']['eeg_info']['channels'][i]['label'][0] == chLabel:
             chIndex = i
-            print("Index found!\n")
+            print("Channel found!\n")
 
     return chIndex
     
@@ -125,8 +125,6 @@ def getFeatures(stream, streamID, sb, se, window_size=100, overlap=0.25):
     return newFeatures
     
 def plotFeatures(features, chLabel):
-    print(features.iloc[0:180])
-    
     plt.figure(figsize=(12,12))
     plt.suptitle(chLabel + " Features\n", fontsize=18)
     for i, f1, f2 in zip(range(1,5), ['f0', 'f2', 'f4', 'f6'], ['f1', 'f3', 'f5', 'f7']):
@@ -139,55 +137,57 @@ def plotFeatures(features, chLabel):
         plt.legend()
     plt.tight_layout()
     plt.show()
-    
-def three_tier_test(features, chLabel):
 
+def knn(trainVal, test):
+    #Split train/val data
+    train, val = train_test_split(trainVal, test_size=.25, random_state=None)
 
-    
-    train_val, test = train_test_split(features, test_size=0.2, random_state=None)
-    train, val = train_test_split(train_val, test_size=.25, random_state=None)
-    
-    X_train, Y_train = train.drop(columns=['sb','se','streamID','class']), train['class'].astype('int')
-    X_val, Y_val = val.drop(columns=['sb','se','streamID','class']), val['class'].astype('int')
-    X_test, Y_test = test.drop(columns=['class']), test['class'].astype('int')
-    
-    model = MLPClassifier(batch_size=5, max_iter=1000, activation='logistic').fit(X_train, Y_train)
-    plt.plot(model.loss_curve_, label='Training', c='b', alpha=0.75)
-    model.fit(X_val, Y_val)
-    plt.plot(model.loss_curve_, label='Validation', c='g', alpha=0.75)
-    plt.title(chLabel + ' Epoch Error Curve')
-    plt.xlabel('Epoch')
-    plt.ylabel("Error")
-    plt.legend()
+    k_values = list(range(1, len(val) + 1))
+    accuracies = []
 
-    val_predictions = model.predict(X_val)
-    test_predictions = model.predict(X_test)
-    
-    
-    modelResults =  {'ValTruth': Y_val, 'ValPrediction': val_predictions, 'TestTruth': Y_test, 'TestPrediction': test_predictions} 
-    
-    plotPerformance(modelResults, chLabel)
-    
-    return model
+    #Find best k-value using train/val data
+    for k in k_values:
+        model = KNeighborsClassifier(n_neighbors=k)
+        model.fit(train.drop(columns='class'), train['class'])
 
-def plotPerformance(modelResults, chLabel):
+        val_predictions = model.predict(val.drop(columns='class'))
+
+        accuracy = accuracy_score(val['class'], val_predictions)
+        accuracies.append(accuracy)
+
+    #Plot k-value vs accuracy
+    plt.scatter(k_values, accuracies, marker='o')
+    plt.title('Accuracy vs. k Value')
+    plt.xlabel('k Value')
+    plt.ylabel('Accuracy')
+    plt.show
+
+    #Get k-value from best model
+    best_k = k_values[(accuracies.index(max(accuracies)))]
+    print("Best k-value = ", best_k)
+
+    #Run best model against test data
+    best_model = KNeighborsClassifier(n_neighbors=best_k)
+    best_model.fit(train.drop(columns='class'), train['class'])
+    test_predictions = best_model.predict(test.drop(columns='class'))
+
+    #Get results from test data
+    precision =   precision_score(test['class'], test_predictions)
+    recall =      recall_score(test['class'], test_predictions)
+    f1 =          f1_score(test['class'], test_predictions)
+    accuracy =    accuracy_score(test['class'], test_predictions)
+    specificity = recall_score(test['class'], test_predictions, pos_label=0)
+    auc =         roc_auc_score(test['class'], test_predictions)
+    contingency_table = confusion_matrix(test['class'], test_predictions)
+    knnPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
+
+    return knnPerformance, contingency_table
+
+def plotPerformance(modelPerformance, modelName, chLabel):
     #Calculating and plotting performance measures for val and test data
     plt.figure(figsize=(10,8))
-    plt.title(chLabel + ' Performance Measures', fontsize=16)
-    barWidth = 0.3
-    for dataset in ['Val', 'Test']:
-        precision =   precision_score(modelResults[dataset+'Truth'], modelResults[dataset+'Prediction'])
-        recall =      recall_score(modelResults[dataset+'Truth'], modelResults[dataset+'Prediction'])
-        f1 =          f1_score(modelResults[dataset+'Truth'], modelResults[dataset+'Prediction'])
-        accuracy =    accuracy_score(modelResults[dataset+'Truth'], modelResults[dataset+'Prediction'])
-        specificity = recall_score(modelResults[dataset+'Truth'], modelResults[dataset+'Prediction'], pos_label=0)
-        auc =         roc_auc_score(modelResults[dataset+'Truth'], modelResults[dataset+'Prediction'])       
-        performanceMeasures = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
-        if dataset == 'Val':
-            plt.bar(performanceMeasures.keys(), performanceMeasures.values(), -barWidth, align='edge', color='g', label=dataset)
-        else:
-            plt.bar(performanceMeasures.keys(), performanceMeasures.values(), +barWidth, align='edge', color='b', label=dataset)  
-    plt.legend()
+    plt.title(chLabel + ': ' + modelName + ' Performance Measures', fontsize=16)
+    plt.bar(modelPerformance.keys(), modelPerformance.values())
     plt.tight_layout()
     plt.show()
 #
@@ -195,14 +195,11 @@ def plotPerformance(modelResults, chLabel):
 #Main code start here
 def main():
     features = pd.DataFrame(columns=['sb', 'se', 'streamID', 'f0', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'class'])
-    train_val = pd.DataFrame(columns=['sb', 'se', 'streamID', 'f0', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'class'])
-    tester = pd.DataFrame(columns=['sb', 'se', 'streamID', 'f0', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'class'])
     chIndex = getIndex(chLabel)
-    streamID = 0    
     
+    streamID = 0
     for sb in ['sb1', 'sb2']:
         for se in ['se1', 'se2']:
-            
             pathSoIRoot = 'INPUT\\DataSmall\\' + sb + '\\' + se
             files = os.listdir(pathSoIRoot)
             for file in files:
@@ -221,63 +218,31 @@ def main():
                 
                 streamID += 1
     features.loc[features['sb'] == 'sb2', 'class'] = 1
-    
-    input_path = 'OUTPUT\\TrainValidateData.csv'
-    test_path = 'OUTPUT\\TestData.csv'
-    train_val_data = pd.read_csv(input_path) 
-    test_data = pd.read_csv(test_path)
-    # with open(train_val_data, 'rb') as train_val_file:
-    #     for sb in train_val_data:
-    #             for se in ['se1']:
-    #                     #Load SoI object
-    #                     # with open(f'{pathSoi}{soi_file}', 'rb') as fp:
-    #                     #     soi = pckl.load(fp)
-                        
-    #                     #Apply filters
-    #                     filteredStream = applyFilters(soi['series'][chIndex], soi['info']['eeg_info']['effective_srate'])
-    #                     #Get features
-    #                     newFeatures = getFeatures(filteredStream, streamID, sb, se)
-    #                     #Add features to DF
-    #                     if se == 'se1':
-    #                         trainVal = pd.concat([trainVal, newFeatures], ignore_index=True)
-    #                     # elif se == 'se2':
-    #                     #     tester = pd.concat([tester, newFeatures], ignore_index=True)
-                            
-    #                     # features = pd.concat([features, newFeatures], ignore_index=True)
-                        
-    #                     streamID += 1
-    # # tester.loc[tester['sb'] == 'sb2', 'class'] = 1
 
-
-    
-    test_X = test_data.iloc[:, 3:-1]
-    test_Y = test_data.iloc[:,-1]
-    
-    #Trying out getting rid of sb se from columns
-    # features = features.drop(columns=['sb','se'])
-    
     #Visualize features
-    #visualize(features, chLabel)
+    plotFeatures(features, chLabel)
     #Split train/val and test data
     trainVal = features.loc[features['se'] == 'se1']
     test = features.loc[features['se'] == 'se2']
-    #Split train/val and test data based on available columns
-    # trainVal = features.loc[features['streamID'] < (features['streamID'].max() / 2)]
-    # test = features.loc[features['streamID'] >= (features['streamID'].max() / 2)]
+    #Output CSV files to input folder to be used in models
+    trainVal.to_csv('INPUT\\TrainValidateData.csv',index=False)
+    test.to_csv('INPUT\\TestData.csv',index=False)
 
-    #Make csv
-    trainVal.to_csv('OUTPUT\\TrainValidateData.csv')
-    test.to_csv('OUTPUT\\TestData.csv')
+    #Reading features from input CSV files
+    trainVal_path = 'INPUT\\TrainValidateData.csv'
+    test_path = 'INPUT\\TestData.csv'
+    trainVal_data = pd.read_csv(trainVal_path) 
+    test_data = pd.read_csv(test_path)
+
+    #Dropping columns no longer needed
+    trainVal_data = trainVal_data.drop(columns=['sb','se','streamID'])
+    test_data = test_data.drop(columns=['sb','se','streamID'])
+
+    #Running KNN model
+    knn_performance, knn_cMatrix = knn(trainVal_data, test_data)
+    print(knn_cMatrix)
+    plotPerformance(knn_performance, 'KNN', chLabel)
     
-    #Apply model and 3-tier testing scheme
-    model = three_tier_test(trainVal, chLabel)
-    
-    # thing = model.predict(test_X)
-    # modelStats = accuracy_score(test_Y, thing)
-    # print(modelStats)
-    
-    #Get performance measures from model
-    plotPerformance(model, chLabel)
 #             
 #%% SELF-RUN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Main Self-run block
