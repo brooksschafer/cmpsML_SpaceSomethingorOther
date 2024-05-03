@@ -192,7 +192,7 @@ def dtree(trainVal, test):
         #Shuffle data
         trainVal.sample(frac=1)
         #Split data
-        train, val = train_test_split(trainVal, test_size=.20, random_state=None)
+        train, val = train_test_split(trainVal, test_size=.25, random_state=None)
         
         #Fit model with training data
         model = DecisionTreeClassifier(criterion='entropy')
@@ -223,6 +223,36 @@ def dtree(trainVal, test):
     dTreePerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
 
     return dTreePerformance, contingency_table
+
+def ann(trainVal, test):
+    #Split train/val data
+    train, val = train_test_split(trainVal, test_size=.25, random_state=None)
+    
+    #Fit model and generate epoch curves
+    model = MLPClassifier(batch_size=5, max_iter=1000, activation='logistic')
+    model.fit(train.drop(columns='class'), train['class'])
+    plt.plot(model.loss_curve_, label='Training', c='b', alpha=0.75)
+    model.fit(val.drop(columns='class'), val['class'])
+    plt.plot(model.loss_curve_, label='Validation', c='g', alpha=0.75)
+    plt.title('Epoch Error Curve')
+    plt.xlabel('Epoch')
+    plt.ylabel("Error")
+    plt.legend()
+
+    #Run model against test data
+    test_predictions = model.predict(test.drop(columns='class'))
+      
+    #Get results from test data
+    precision =   precision_score(test['class'], test_predictions)
+    recall =      recall_score(test['class'], test_predictions)
+    f1 =          f1_score(test['class'], test_predictions)
+    accuracy =    accuracy_score(test['class'], test_predictions)
+    specificity = recall_score(test['class'], test_predictions, pos_label=0)
+    auc =         roc_auc_score(test['class'], test_predictions)
+    contingency_table = confusion_matrix(test['class'], test_predictions)
+    annPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
+
+    return annPerformance, contingency_table
 
 def plotPerformance(modelPerformance, modelName, chLabel):
     plt.figure(figsize=(10,8))
@@ -287,6 +317,11 @@ def main():
     dtree_performance, dtree_cMatrix = dtree(trainVal_data, test_data)
     plotPerformance(dtree_performance, 'DTree', chLabel)
     print(chLabel, ':', 'DTree Confusion Matrix\n', dtree_cMatrix)
+
+    #Running ANN model
+    ann_performance, ann_cMatrix = ann(trainVal_data, test_data)
+    plotPerformance(ann_performance, 'ANN', chLabel)
+    print(chLabel, ':', 'ANN Confusion Matrix\n', ann_cMatrix)
     
 #             
 #%% SELF-RUN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
