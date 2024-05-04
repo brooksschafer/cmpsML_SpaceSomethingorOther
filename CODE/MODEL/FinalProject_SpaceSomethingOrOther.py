@@ -256,6 +256,50 @@ def ann(trainVal, test):
 
     return annPerformance, contingency_table
 
+def svm(trainVal, test):
+    best_accuracy = 0
+
+    #Using k-fold cross validation k=5
+    for k_fold in range(1,6):
+        #Shuffle data
+        trainVal.sample(frac=1)
+
+        #Splitting into data and labels
+        X_trainVal = trainVal.iloc[:, :-1]
+        y_trainVal = trainVal.iloc[:, -1]
+
+        #Splitting trainVal into train and validation sets
+        X_train, X_val, y_train, y_val = train_test_split(X_trainVal, y_trainVal, test_size=0.25, random_state=42)
+        
+        #Initialize and train the SVM model
+        svm_model = SVC()
+        svm_model.fit(X_train, y_train)
+
+        #Predict on the validation set
+        y_pred_val = svm_model.predict(X_val)
+
+        #Get accuracy of model
+        val_accuracy = accuracy_score(y_val, y_pred_val)
+
+        #Comparing accuracies to find the best model
+        if(val_accuracy > best_accuracy):
+            best_accuracy = val_accuracy
+            best_model = svm_model
+
+    #Run best model against test data
+    test_predictions = best_model.predict(test.drop(columns='class'))
+
+    #Get results from test data
+    precision =   precision_score(test['class'], test_predictions)
+    recall =      recall_score(test['class'], test_predictions)
+    f1 =          f1_score(test['class'], test_predictions)
+    accuracy =    accuracy_score(test['class'], test_predictions)
+    specificity = recall_score(test['class'], test_predictions, pos_label=0)
+    auc =         roc_auc_score(test['class'], test_predictions)
+    contingency_table = confusion_matrix(test['class'], test_predictions)
+    svmPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
+
+    return svmPerformance, contingency_table
 
 def plotPerformance(modelPerformance, modelName, chLabel):
     plt.figure(figsize=(10,8))
@@ -294,9 +338,11 @@ def main():
 
     #Visualize features
     plotFeatures(features, chLabel)
+
     #Split train/val and test data
     trainVal = features.loc[features['se'] == 'se1']
     test = features.loc[features['se'] == 'se2']
+
     #Output CSV files to input folder to be used in models
     trainVal.to_csv('INPUT\\'+chLabel+'TrainValidateData.csv',index=False)
     test.to_csv('INPUT\\'+chLabel+'TestData.csv',index=False)
@@ -327,27 +373,9 @@ def main():
     print(chLabel, ':', 'ANN Confusion Matrix\n', ann_cMatrix)
     
     #Running SVM
-    
-    # Splitting into data and labels
-    X_trainVal = trainVal_data.iloc[:, :-1]  # Selecting all rows, and all columns except the last one
-    y_trainVal = trainVal_data.iloc[:, -1]   # Selecting all rows, and the last column
-
-    # Splitting trainVal_data into train and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X_trainVal, y_trainVal, test_size=0.2, random_state=42)
-
-    # Initialize and train the SVM model
-    svm_model = SVC()
-    svm_model.fit(X_train, y_train)
-
-    # Predict on the validation set
-    y_pred_val = svm_model.predict(X_val)
-
-    # Calculate accuracy on the validation set
-    val_accuracy = accuracy_score(y_val, y_pred_val)
-    print("Validation Accuracy:", val_accuracy)
-    val_f1 = f1_score(y_val, y_pred_val)
-    print("F1 Score: ", val_f1)
-
+    svm_performance, svm_cMatrix = svm(trainVal_data, test_data)
+    plotPerformance(svm_performance, 'SVM', chLabel)
+    print(chLabel, ':', 'SVM Confusion Matrix\n', svm_cMatrix)
 #             
 #%% SELF-RUN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Main Self-run block
