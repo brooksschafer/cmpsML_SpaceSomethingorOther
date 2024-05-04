@@ -142,8 +142,6 @@ def plotFeatures(features, chLabel):
     
 def three_tier_test(features, chLabel):
 
-
-    
     train_val, test = train_test_split(features, test_size=0.2, random_state=None)
     train, val = train_test_split(train_val, test_size=.25, random_state=None)
     
@@ -162,8 +160,7 @@ def three_tier_test(features, chLabel):
 
     val_predictions = model.predict(X_val)
     test_predictions = model.predict(X_test)
-    
-    
+      
     modelResults =  {'ValTruth': Y_val, 'ValPrediction': val_predictions, 'TestTruth': Y_test, 'TestPrediction': test_predictions} 
     
     plotPerformance(modelResults, chLabel)
