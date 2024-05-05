@@ -36,7 +36,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.inspection import DecisionBoundaryDisplay
 from sklearn.svm import SVC
-from sklearn.metrics import confusion_matrix, roc_auc_score, accuracy_score, precision_score, recall_score, f1_score, classification_report
+from sklearn.metrics import ConfusionMatrixDisplay, roc_auc_score, accuracy_score, precision_score, recall_score, f1_score, classification_report
 #
 #%% USER INTERFACE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 chLabel = input("Enter a channel label(ex, M1):").upper()
@@ -141,7 +141,7 @@ def plotFeatures(features, chLabel):
     plt.tight_layout()
     plt.show()
 
-def knn(trainVal, test):
+def knn(trainVal, test, chLabel):
     #Split train/val data
     train, val = train_test_split(trainVal, test_size=.25, random_state=None)
 
@@ -167,7 +167,7 @@ def knn(trainVal, test):
 
     #Get k-value from best model
     best_k = k_values[(accuracies.index(max(accuracies)))]
-    print("Best k-value = ", best_k)
+    print(chLabel, "Best k-value = ", best_k)
 
     #Run best model against test data
     best_model = KNeighborsClassifier(n_neighbors=best_k)
@@ -181,10 +181,12 @@ def knn(trainVal, test):
     accuracy =    accuracy_score(test['class'], test_predictions)
     specificity = recall_score(test['class'], test_predictions, pos_label=0)
     auc =         roc_auc_score(test['class'], test_predictions)
-    contingency_table = confusion_matrix(test['class'], test_predictions)
     knnPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
 
-    return knnPerformance, contingency_table
+    #Display confusion matrix from results
+    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
+
+    return knnPerformance
 
 def dtree(trainVal, test):
     best_accuracy = 0
@@ -221,22 +223,24 @@ def dtree(trainVal, test):
     accuracy =    accuracy_score(test['class'], test_predictions)
     specificity = recall_score(test['class'], test_predictions, pos_label=0)
     auc =         roc_auc_score(test['class'], test_predictions)
-    contingency_table = confusion_matrix(test['class'], test_predictions)
     dTreePerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
 
-    return dTreePerformance, contingency_table
+    #Display confusion matrix from results
+    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
 
-def ann(trainVal, test):
+    return dTreePerformance
+
+def ann(trainVal, test, chLabel):
     #Split train/val data
     train, val = train_test_split(trainVal, test_size=.25, random_state=None)
     
     #Fit model and generate epoch curves
-    model = MLPClassifier(batch_size=5, max_iter=1000, activation='logistic')
+    model = MLPClassifier(hidden_layer_sizes=10, batch_size=5, max_iter=1500, activation='logistic')
     model.fit(train.drop(columns='class'), train['class'])
     plt.plot(model.loss_curve_, label='Training', c='b', alpha=0.75)
     model.fit(val.drop(columns='class'), val['class'])
     plt.plot(model.loss_curve_, label='Validation', c='g', alpha=0.75)
-    plt.title('Epoch Error Curve')
+    plt.title(chLabel + ' Epoch Error Curve')
     plt.xlabel('Epoch')
     plt.ylabel("Error")
     plt.legend()
@@ -251,10 +255,12 @@ def ann(trainVal, test):
     accuracy =    accuracy_score(test['class'], test_predictions)
     specificity = recall_score(test['class'], test_predictions, pos_label=0)
     auc =         roc_auc_score(test['class'], test_predictions)
-    contingency_table = confusion_matrix(test['class'], test_predictions)
     annPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
 
-    return annPerformance, contingency_table
+    #Display confusion matrix from results
+    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
+
+    return annPerformance
 
 def svm(trainVal, test):
     best_accuracy = 0
@@ -296,10 +302,12 @@ def svm(trainVal, test):
     accuracy =    accuracy_score(test['class'], test_predictions)
     specificity = recall_score(test['class'], test_predictions, pos_label=0)
     auc =         roc_auc_score(test['class'], test_predictions)
-    contingency_table = confusion_matrix(test['class'], test_predictions)
     svmPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
 
-    return svmPerformance, contingency_table
+    #Display confusion matrix from results
+    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
+
+    return svmPerformance
 
 def plotPerformance(modelPerformance, modelName, chLabel):
     plt.figure(figsize=(10,8))
@@ -358,24 +366,20 @@ def main():
     test_data = test_data.drop(columns=['sb','se','streamID'])
 
     #Running KNN model
-    knn_performance, knn_cMatrix = knn(trainVal_data, test_data)
+    knn_performance = knn(trainVal_data, test_data, chLabel)
     plotPerformance(knn_performance, 'KNN', chLabel)
-    print(chLabel, ':', 'KNN Confusion Matrix\n', knn_cMatrix)
 
     #Running DTree model
-    dtree_performance, dtree_cMatrix = dtree(trainVal_data, test_data)
+    dtree_performance = dtree(trainVal_data, test_data)
     plotPerformance(dtree_performance, 'DTree', chLabel)
-    print(chLabel, ':', 'DTree Confusion Matrix\n', dtree_cMatrix)
 
     #Running ANN model
-    ann_performance, ann_cMatrix = ann(trainVal_data, test_data)
+    ann_performance = ann(trainVal_data, test_data, chLabel)
     plotPerformance(ann_performance, 'ANN', chLabel)
-    print(chLabel, ':', 'ANN Confusion Matrix\n', ann_cMatrix)
     
     #Running SVM
-    svm_performance, svm_cMatrix = svm(trainVal_data, test_data)
+    svm_performance = svm(trainVal_data, test_data)
     plotPerformance(svm_performance, 'SVM', chLabel)
-    print(chLabel, ':', 'SVM Confusion Matrix\n', svm_cMatrix)
 #             
 #%% SELF-RUN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Main Self-run block
