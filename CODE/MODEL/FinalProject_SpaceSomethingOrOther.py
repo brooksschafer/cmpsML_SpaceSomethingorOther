@@ -16,7 +16,7 @@ Notes:
 if __name__ == "__main__":
     import os
     os.chdir(r"C:\Users\brook\OneDrive\Documents\GitHub\cmpsML_SpaceSomethingorOther\CODE")
-    # os.chdir(r"C:\Users\melof\OneDrive\Documents\GitHub\cmpsML_SpaceSomethingorOther\CODE")
+    #os.chdir(r"C:\Users\melof\OneDrive\Documents\GitHub\cmpsML_SpaceSomethingorOther\CODE")
 
 #custom imports
 #other imports
@@ -36,8 +36,14 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.inspection import DecisionBoundaryDisplay
 from sklearn.svm import SVC
-from sklearn.metrics import ConfusionMatrixDisplay, roc_auc_score, accuracy_score, precision_score, recall_score, f1_score, classification_report
-#
+from sklearn.metrics import confusion_matrix, roc_auc_score, accuracy_score, precision_score, recall_score, f1_score, classification_report
+import tensorflow as tf 
+from tensorflow.keras.losses import MeanSquaredError 
+from tensorflow.keras.layers import Dense, Input, Dropout, BatchNormalization, LayerNormalization, Permute
+from tensorflow.keras import Sequential, Model
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from sklearn.metrics import ConfusionMatrixDisplay
+
 #%% USER INTERFACE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 chLabel = input("Enter a channel label(ex, M1):").upper()
 #
@@ -126,6 +132,16 @@ def getFeatures(stream, streamID, sb, se, window_size=100, overlap=0.25):
     })
     newFeatures = pd.DataFrame(newFeatures)
     return newFeatures
+
+
+def get_metrics(y_true, y_pred): 
+    return {'Precision' : precision_score(y_true, y_pred), 
+            'Recall' : recall_score(y_true, y_pred), 
+            'F1' : f1_score(y_true, y_pred), 
+            'Accuracy' : accuracy_score(y_true, y_pred), 
+            'Specificity' : recall_score(y_true, y_pred, pos_label = 0),
+            'AUC' : roc_auc_score(y_true, y_pred)} 
+      
     
 def plotFeatures(features, chLabel):
     plt.figure(figsize=(12,12))
@@ -140,8 +156,23 @@ def plotFeatures(features, chLabel):
         plt.legend()
     plt.tight_layout()
     plt.show()
+    
+def plot_model_run(y_true, y_pred, additional_plot, chLabel, model_type, figsize = (12,6)):
+    model_metrics = get_metrics(y_true, y_pred)
+    fig = plt.gcf()
+    ax_0 = fig.add_subplot(1, 3, 2) if additional_plot is not None else fig.add_subplot(1,2,1)#subplots(1,3, figsize = figsize, tight_layout = True)
+    ax_1 = fig.add_subplot(1, 3, 3) if additional_plot is not None else fig.add_subplot(1,2,2)
+    ax_0.bar(model_metrics.keys(), model_metrics.values())
+    ax_0.title.set_text('Performance Measures')
+    ax_0.tick_params(axis='x', labelrotation = 30)
+    ConfusionMatrixDisplay.from_predictions(y_true, y_pred, ax = ax_1, colorbar=False)
+    ax_1.title.set_text('Confusion Matrix')
+    
+    fig.suptitle(f'{model_type} - {chLabel}')
+    return fig
+    
 
-def knn(trainVal, test, chLabel):
+def knn(trainVal, test):
     #Split train/val data
     train, val = train_test_split(trainVal, test_size=.25, random_state=None)
 
@@ -153,40 +184,31 @@ def knn(trainVal, test, chLabel):
         model = KNeighborsClassifier(n_neighbors=k)
         model.fit(train.drop(columns='class'), train['class'])
 
-        val_predictions = model.predict(val.drop(columns='class'))
+        test_predictions = model.predict(val.drop(columns='class'))
 
-        accuracy = accuracy_score(val['class'], val_predictions)
+        accuracy = accuracy_score(val['class'], test_predictions)
         accuracies.append(accuracy)
 
     #Plot k-value vs accuracy
-    plt.scatter(k_values, accuracies, marker='o')
-    plt.title('Accuracy vs. k Value')
-    plt.xlabel('k Value')
-    plt.ylabel('Accuracy')
-    plt.show
+    # kvalueplot = plt.axes()
+    fig = plt.figure(tight_layout = True)
+    kvalueplot = fig.add_subplot(1,3,1)
+    kvalueplot.scatter(k_values, accuracies, marker='o')
+    kvalueplot.title.set_text('Accuracy vs. k Value')
+    kvalueplot.set_xlabel('k Value')
+    kvalueplot.set_ylabel('Accuracy')
+    # plt.show
 
     #Get k-value from best model
     best_k = k_values[(accuracies.index(max(accuracies)))]
-    print(chLabel, "Best k-value = ", best_k)
+    print("Best k-value = ", best_k)
 
     #Run best model against test data
     best_model = KNeighborsClassifier(n_neighbors=best_k)
     best_model.fit(train.drop(columns='class'), train['class'])
     test_predictions = best_model.predict(test.drop(columns='class'))
 
-    #Get results from test data
-    precision =   precision_score(test['class'], test_predictions)
-    recall =      recall_score(test['class'], test_predictions)
-    f1 =          f1_score(test['class'], test_predictions)
-    accuracy =    accuracy_score(test['class'], test_predictions)
-    specificity = recall_score(test['class'], test_predictions, pos_label=0)
-    auc =         roc_auc_score(test['class'], test_predictions)
-    knnPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
-
-    #Display confusion matrix from results
-    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
-
-    return knnPerformance
+    return test['class'], test_predictions, kvalueplot
 
 def dtree(trainVal, test):
     best_accuracy = 0
@@ -196,17 +218,17 @@ def dtree(trainVal, test):
         #Shuffle data
         trainVal.sample(frac=1)
         #Split data
-        train, val = train_test_split(trainVal, test_size=.25, random_state=None)
+        train, val = train_test_split(trainVal, test_size= .25)
         
         #Fit model with training data
         model = DecisionTreeClassifier(criterion='entropy')
         model.fit(train.drop(columns='class'), train['class'])
         
         #Test model against validation data
-        val_predictions = model.predict(val.drop(columns='class'))
+        test_predictions = model.predict(val.drop(columns='class'))
 
         #Get accuracy of model
-        accuracy = accuracy_score(val['class'], val_predictions)
+        accuracy = accuracy_score(val['class'], test_predictions)
 
         #Comparing accuracies to find the best model
         if(accuracy > best_accuracy):
@@ -217,50 +239,56 @@ def dtree(trainVal, test):
     test_predictions = best_model.predict(test.drop(columns='class'))
 
     #Get results from test data
-    precision =   precision_score(test['class'], test_predictions)
-    recall =      recall_score(test['class'], test_predictions)
-    f1 =          f1_score(test['class'], test_predictions)
-    accuracy =    accuracy_score(test['class'], test_predictions)
-    specificity = recall_score(test['class'], test_predictions, pos_label=0)
-    auc =         roc_auc_score(test['class'], test_predictions)
-    dTreePerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
+    fig = plt.figure(tight_layout = True)
 
-    #Display confusion matrix from results
-    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
+    return test['class'], test_predictions, None
 
-    return dTreePerformance
+def ann(trainVal, test):
+    trainVal = trainVal.copy()
+    test = test.copy()
+    train, val = train_test_split(trainVal, test_size = .25) 
+    train_y = train.pop('class').values.astype(np.float32)
+    test_y = test.pop('class').values.astype(np.float32)
+    val_y = val.pop('class').values.astype(np.float32)
 
-def ann(trainVal, test, chLabel):
-    #Split train/val data
-    train, val = train_test_split(trainVal, test_size=.25, random_state=None)
+    model = Sequential()
+    model.add(Dense(128, activation = 'gelu'))
+    model.add(Dropout(.2))
+    model.add(LayerNormalization())
+    model.add(Dense(32, activation = 'gelu'))
+    model.add(Dropout(.1))
+    model.add(LayerNormalization())
+    model.add(Dense(64, activation = 'gelu'))
+    model.add(LayerNormalization())
+    model.add(Dropout(.1))
+    model.add(Dense(2, activation = 'softmax'))
     
-    #Fit model and generate epoch curves
-    model = MLPClassifier(hidden_layer_sizes=10, batch_size=5, max_iter=1500, activation='logistic')
-    model.fit(train.drop(columns='class'), train['class'])
-    plt.plot(model.loss_curve_, label='Training', c='b', alpha=0.75)
-    model.fit(val.drop(columns='class'), val['class'])
-    plt.plot(model.loss_curve_, label='Validation', c='g', alpha=0.75)
-    plt.title(chLabel + ' Epoch Error Curve')
-    plt.xlabel('Epoch')
-    plt.ylabel("Error")
-    plt.legend()
+    reduce_lr = ReduceLROnPlateau(monitor = 'val_loss', factor = .8, patience = 2, min_lr = 1e-6)
+    early_stop = EarlyStopping(monitor = 'val_loss', mode = 'min', patience = 20, restore_best_weights = True)
+    
+    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate = 1e-4), 
+                  loss = 'sparse_categorical_crossentropy'#tf.nn.sparse_softmax_cross_entropy_with_logits(),
+                  )#metrics= []])
+    history = model.fit(train.to_numpy(), train_y,
+                        batch_size = 4, 
+                        epochs = 1000,
+                        validation_data = [val.to_numpy(), val_y],
+                        callbacks = [reduce_lr, early_stop])
+    
+    y_pred = np.argmax(np.array(model.predict(test)), axis = -1)
 
-    #Run model against test data
-    test_predictions = model.predict(test.drop(columns='class'))
-      
-    #Get results from test data
-    precision =   precision_score(test['class'], test_predictions)
-    recall =      recall_score(test['class'], test_predictions)
-    f1 =          f1_score(test['class'], test_predictions)
-    accuracy =    accuracy_score(test['class'], test_predictions)
-    specificity = recall_score(test['class'], test_predictions, pos_label=0)
-    auc =         roc_auc_score(test['class'], test_predictions)
-    annPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
 
-    #Display confusion matrix from results
-    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
-
-    return annPerformance
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+    fig = plt.figure(tight_layout = True)
+    ann_plot = fig.add_subplot(1, 3, 1)
+    ann_plot.plot(loss, label= 'Training Loss', c = 'b', alpha = .75)
+    ann_plot.plot(val_loss, label = 'Validation Loss', c = 'g', alpha = .75)
+    ann_plot.title.set_text('Epoch Error Curve')
+    ann_plot.set_xlabel('Epoch')
+    ann_plot.set_ylabel("Error")
+    ann_plot.legend()
+    return test_y, y_pred, ann_plot
 
 def svm(trainVal, test):
     best_accuracy = 0
@@ -292,29 +320,15 @@ def svm(trainVal, test):
             best_accuracy = val_accuracy
             best_model = svm_model
 
+    fig = plt.figure()
+    
     #Run best model against test data
     test_predictions = best_model.predict(test.drop(columns='class'))
 
     #Get results from test data
-    precision =   precision_score(test['class'], test_predictions)
-    recall =      recall_score(test['class'], test_predictions)
-    f1 =          f1_score(test['class'], test_predictions)
-    accuracy =    accuracy_score(test['class'], test_predictions)
-    specificity = recall_score(test['class'], test_predictions, pos_label=0)
-    auc =         roc_auc_score(test['class'], test_predictions)
-    svmPerformance = {'Precision': precision, 'Recall': recall, 'F1': f1, 'Accuracy': accuracy, 'Specificity': specificity, 'AUC': auc}
+ 
+    return test['class'], test_predictions, None
 
-    #Display confusion matrix from results
-    ConfusionMatrixDisplay.from_predictions(test['class'], test_predictions)
-
-    return svmPerformance
-
-def plotPerformance(modelPerformance, modelName, chLabel):
-    plt.figure(figsize=(10,8))
-    plt.title(chLabel + ': ' + modelName + ' Performance Measures', fontsize=16)
-    plt.bar(modelPerformance.keys(), modelPerformance.values())
-    plt.tight_layout()
-    plt.show()
 #
 #%% MAIN CODE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Main code start here
@@ -366,20 +380,28 @@ def main():
     test_data = test_data.drop(columns=['sb','se','streamID'])
 
     #Running KNN model
-    knn_performance = knn(trainVal_data, test_data, chLabel)
-    plotPerformance(knn_performance, 'KNN', chLabel)
+    y_true, y_pred, kvalueplot = knn(trainVal_data, test_data)
+    fig = plot_model_run(y_true, y_pred, kvalueplot, chLabel, 'KNN')
+    plt.show()
+    print(chLabel, ':', 'KNN Confusion Matrix\n', confusion_matrix(y_true, y_pred))
 
     #Running DTree model
-    dtree_performance = dtree(trainVal_data, test_data)
-    plotPerformance(dtree_performance, 'DTree', chLabel)
+    y_true, y_pred, _ = dtree(trainVal_data, test_data)
+    plot_model_run(y_true, y_pred, None, 'DTree', chLabel)
+    print(chLabel, ':', 'DTree Confusion Matrix\n', confusion_matrix(y_true, y_pred))
 
     #Running ANN model
-    ann_performance = ann(trainVal_data, test_data, chLabel)
-    plotPerformance(ann_performance, 'ANN', chLabel)
+    # ann_performance, ann_cMatrix = ann(trainVal_data, test_data)
+    y_true, y_pred, ann_plot = ann(trainVal_data, test_data)
+    fig = plot_model_run(y_true, y_pred, ann_plot, 'ANN', chLabel)
+    plt.show()
+    print(chLabel, ':', 'ANN Confusion Matrix\n', confusion_matrix(y_true, y_pred))
     
     #Running SVM
-    svm_performance = svm(trainVal_data, test_data)
-    plotPerformance(svm_performance, 'SVM', chLabel)
+    y_true, y_pred, _ = svm(trainVal_data, test_data)
+    fig = plot_model_run(y_true, y_pred, None, 'SVM', chLabel)
+    plt.show()
+    print(chLabel, ':', 'SVM Confusion Matrix\n', confusion_matrix(y_true, y_pred))
 #             
 #%% SELF-RUN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Main Self-run block
